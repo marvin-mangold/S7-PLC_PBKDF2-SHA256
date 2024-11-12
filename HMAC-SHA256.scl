@@ -1,0 +1,163 @@
+﻿FUNCTION "HMAC-SHA256" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      inputmode : Int;   // 1 = Bytes, 2 = String, 
+      outputmode : Int;   // 1 = digest,  2 = hexdigest , 3 = both
+      messageBytes : Array[0..253] of Byte;   // Message as Bytes
+      messageBytesLen : Int;   // number of used Bytes in messageBytes
+      messageString : String;   // Message String
+      keyBytes : Array[0..253] of Byte;   // Key as Bytes
+      keyBytesLen : Int;   // number of used Bytes in keyBytes
+      keyString : String;   // Key as String
+   END_VAR
+
+   VAR_OUTPUT 
+      digest : Array[0..31] of Byte;
+      hexdigest : String;
+   END_VAR
+
+   VAR_TEMP 
+      error : Bool;
+      Key : Struct
+         bytes : Array[0..253] of Byte;
+         len : Int;
+      END_STRUCT;
+      Message : Struct
+         bytes : Array[0..253] of Byte;
+         len : Int;
+      END_STRUCT;
+      K : Array[0..63] of Byte;   // keydata
+      Sha256 : Array[0..31] of Byte;
+      leftBytes : Array[0..63] of Byte;
+      rightBytes : Array[0..253] of Byte;
+      leftright : Array[0..253] of Byte;
+      cnt : Int;
+      tempString : String;
+      tempUInt : UInt;
+   END_VAR
+
+
+BEGIN
+	REGION License and Information
+	(*
+	██╗  ██╗███╗   ███╗ █████╗  ██████╗    ███████╗██╗  ██╗ █████╗ ██████╗ ███████╗ ██████╗               ██████╗ ██╗      ██████╗
+	██║  ██║████╗ ████║██╔══██╗██╔════╝    ██╔════╝██║  ██║██╔══██╗╚════██╗██╔════╝██╔════╝               ██╔══██╗██║     ██╔════╝
+	███████║██╔████╔██║███████║██║         ███████╗███████║███████║ █████╔╝███████╗███████╗     █████╗    ██████╔╝██║     ██║     
+	██╔══██║██║╚██╔╝██║██╔══██║██║         ╚════██║██╔══██║██╔══██║██╔═══╝ ╚════██║██╔═══██╗    ╚════╝    ██╔═══╝ ██║     ██║     
+	██║  ██║██║ ╚═╝ ██║██║  ██║╚██████╗    ███████║██║  ██║██║  ██║███████╗███████║╚██████╔╝              ██║     ███████╗╚██████╗
+	╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝               ╚═╝     ╚══════╝ ╚═════╝                                                                  
+	====================================================================================================================
+	MIT License
+	Copyright (C) 2024  Marvin Mangold (Marvin.Mangold00@googlemail.com)
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+	
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+	
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+	====================================================================================================================
+	In cryptography, an HMAC (sometimes expanded as either keyed-hash message authentication code or hash-based message authentication code)
+	is a specific type of message authentication code (MAC) involving a cryptographic hash function and a secret cryptographic key.
+	HMAC can provide authentication using a shared secret instead of using digital signatures with asymmetric cryptography.
+	Any cryptographic hash function, such as SHA-2 or SHA-3, may be used in the calculation of an HMAC; 
+	the resulting MAC algorithm is termed HMAC-x, where x is the hash function used (e.g. HMAC-SHA256 or HMAC-SHA3-512).
+	HMAC does not encrypt the message. Instead, the message (encrypted or not) must be sent alongside the HMAC hash. 
+	Parties with the secret key will hash the message again themselves, and if it is authentic, the received and computed hashes will match. 
+	
+	HMAC-SHA256 = SHA256( ( K XOR opad ) <concat> SHA256( ( K XOR ipad ) <concat> M ) )
+	
+	depending on the input "inputmode" different inputformats are used
+	1   Message and Key are used as Bytes
+	2   Message and Key are used as String
+	
+	depending on the input "outputmode" different outputformats are available
+	1   The digest ouput is the final value as bytes (Array [0..31] of Byte)
+	2   The hexdigest output is the final hash value as a hexadecimal string (64 bytes string)
+	3   Both 1 and 2
+	
+	====================================================================================================================    
+	*)
+	END_REGION
+	
+	REGION Convert and copy Inputs
+	    // copy Key in Key.bytes and save the number of Bytes Key.len
+	    IF #inputmode = 1 THEN
+	        MOVE_BLK(IN:=#keyBytes[0], COUNT:=MIN(IN1:=#keyBytesLen, IN2:=254), OUT=>#Key.bytes[0]);
+	        #Key.len := MIN(IN1:=#keyBytesLen, IN2:=254);
+	    ELSIF #inputmode = 2 THEN
+	        Strg_TO_Chars(Strg := #keyString, pChars := 0, Cnt => #tempUInt, Chars := #Key.bytes);
+	        #Key.len := UINT_TO_INT(#tempUInt);
+	    END_IF;
+	    
+	    // copy Message in Message.bytes and save the number of Bytes Message.len
+	    IF #inputmode = 1 THEN
+	        MOVE_BLK(IN:=#messageBytes[0], COUNT:=MIN(IN1:=#messageBytesLen, IN2:=254), OUT=>#Message.bytes[0]);
+	        #Message.len := MIN(IN1:=#messageBytesLen, IN2:=254);
+	    ELSIF #inputmode = 2 THEN
+	        Strg_TO_Chars(Strg := #messageString, pChars := 0, Cnt => #tempUInt, Chars := #Message.bytes);
+	        #Message.len := UINT_TO_INT(#tempUInt);
+	    END_IF;
+	END_REGION
+	
+	REGION Check Inputs
+	    #error := FALSE;
+	    IF #Key.len <= 0 THEN #error := TRUE; END_IF;
+	    IF #Message.len <= 0 THEN #error := TRUE; END_IF;
+	    IF #Message.len > 189 THEN #error := TRUE; END_IF;
+	END_REGION
+	
+	IF NOT #error THEN
+	    REGION copy keyBytes in K as 64 Bytes
+	        // if K > 64 Bytes Then first do SHA256(Key)
+	        IF #Key.len <= 64 THEN
+	            // copy
+	            MOVE_BLK(IN:=#Key.bytes[0], COUNT:=#Key.len, OUT=>#K[0]);
+	            FILL_BLK(IN:=B#00, COUNT:=64 - #Key.len, OUT=>#K[#Key.len]);
+	        ELSIF #Key.len > 64 THEN
+	            // SHA256(Key)
+	            "SHA256"(inputmode:=1, outputmode:=1, messageBytes:=#Key.bytes, messageBytesLen:=#Key.len, messageString:=#tempString, digest=>#Sha256, hexdigest=>#tempString);
+	            MOVE_BLK(IN:=#Sha256[0], COUNT:=32, OUT=>#K[0]);
+	            FILL_BLK(IN:=B#00, COUNT:=32, OUT=>#K[32]);
+	        END_IF;
+	    END_REGION
+	    
+	    REGION XOR ipad and opad   
+	        FOR #cnt := 0 TO 63 DO
+	            // ( K XOR opad )
+	            #leftBytes[#cnt] := #K[#cnt] XOR 16#5c;
+	            // ( K XOR ipad )
+	            #rightBytes[#cnt] := #K[#cnt] XOR 16#36;
+	        END_FOR;
+	    END_REGION
+	
+	    REGION Compute right part of function
+	        // SHA256( ( K XOR ipad ) <concat> M )
+	        MOVE_BLK(IN:=#Message.bytes[0], COUNT:=#Message.len, OUT=>#rightBytes[64]);
+	        // SHA256
+	        "SHA256"(inputmode:=1, outputmode:=1, messageBytes:=#rightBytes, messageBytesLen:=(64 + #Message.len) , messageString:=#tempString, digest=>#Sha256, hexdigest=>#tempString);
+	    END_REGION
+	    
+	    REGION Compute result
+	        // SHA256( leftString <concat> rightString )
+	        MOVE_BLK(IN:=#leftBytes[0], COUNT:=64, OUT=>#leftright[0]);
+	        MOVE_BLK(IN:=#Sha256[0], COUNT:=32, OUT=>#leftright[64]);
+	        "SHA256"(inputmode:=1, outputmode:=#outputmode, messageBytes:=#leftright, messageBytesLen:= 96, messageString:=#tempString, digest=>#digest, hexdigest=>#hexdigest);
+	    END_REGION
+	ELSE
+	    #hexdigest := '';
+	    FILL_BLK(IN := 0, COUNT := 32, OUT => #digest[0]);
+	END_IF;
+END_FUNCTION
+
