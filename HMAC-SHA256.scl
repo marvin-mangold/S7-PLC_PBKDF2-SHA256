@@ -86,7 +86,6 @@ BEGIN
 	1   The digest ouput is the final value as bytes (Array [0..31] of Byte)
 	2   The hexdigest output is the final hash value as a hexadecimal string (64 bytes string)
 	3   Both 1 and 2
-	
 	====================================================================================================================    
 	*)
 	END_REGION
