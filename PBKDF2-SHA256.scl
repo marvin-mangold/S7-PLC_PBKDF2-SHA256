@@ -1,0 +1,185 @@
+﻿FUNCTION_BLOCK "PBKDF2-SHA256"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      Execute : Bool;
+      inputmode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;   // 1 = Bytes, 2 = String, 
+      outputmode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;   // 1 = digest,  2 = hexdigest , 3 = both
+      passwordBytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..253] of Byte;   // Password as Bytes
+      passwordBytesLen { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;   // number of used Bytes in passwordBytes
+      passwordString { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : String;   // Password as String
+      saltBytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..253] of Byte;   // Salt as Bytes
+      saltBytesLen { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;   // number of used Bytes in passwordBytes
+      saltString { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : String;   // Password as String
+      iterations { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt;   // number of Iterations
+   END_VAR
+
+   VAR_OUTPUT 
+      Done : Bool;
+      derivedKeyString : String;
+      derivedKeyBytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..31] of Byte;   // DK
+   END_VAR
+
+   VAR 
+      Step : Int;
+      Ulast { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..31] of Byte;
+      xSum { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..31] of Byte;
+      Password { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+         bytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..253] of Byte;
+         len { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;
+      END_STRUCT;
+      Salt { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+         bytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..253] of Byte;
+         len { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;
+      END_STRUCT;
+      l { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt;   // number of hLen-octet blocks in the derived key
+      r { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt;   // number of octets in the last
+      i { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : DInt;
+      iBytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..3] of Byte;
+      cntU { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;
+      cntXor { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;
+      Unow { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..253] of Byte;
+   END_VAR
+
+   VAR_TEMP 
+      tempUInt : UInt;
+      tempString : String;
+      tempWord : Word;
+   END_VAR
+
+   VAR CONSTANT 
+      hLen : DInt := 32;   // hLen
+      dkLen : DInt := 32;   // dkLen
+   END_VAR
+
+
+BEGIN
+	REGION License and Information
+	(*
+	██████╗ ██████╗ ██╗  ██╗██████╗ ███████╗██████╗     ███████╗██╗  ██╗ █████╗ ██████╗ ███████╗ ██████╗               ██████╗ ██╗      ██████╗
+	██╔══██╗██╔══██╗██║ ██╔╝██╔══██╗██╔════╝╚════██╗    ██╔════╝██║  ██║██╔══██╗╚════██╗██╔════╝██╔════╝               ██╔══██╗██║     ██╔════╝
+	██████╔╝██████╔╝█████╔╝ ██║  ██║█████╗   █████╔╝    ███████╗███████║███████║ █████╔╝███████╗███████╗     █████╗    ██████╔╝██║     ██║     
+	██╔═══╝ ██╔══██╗██╔═██╗ ██║  ██║██╔══╝  ██╔═══╝     ╚════██║██╔══██║██╔══██║██╔═══╝ ╚════██║██╔═══██╗    ╚════╝    ██╔═══╝ ██║     ██║     
+	██║     ██████╔╝██║  ██╗██████╔╝██║     ███████╗    ███████║██║  ██║██║  ██║███████╗███████║╚██████╔╝              ██║     ███████╗╚██████╗
+	╚═╝     ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝     ╚══════╝    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝               ╚═╝     ╚══════╝ ╚═════╝                                                                                                                                                                                                                                                                                                                                                 
+	====================================================================================================================
+	MIT License
+	Copyright (C) 2024  Marvin Mangold (Marvin.Mangold00@googlemail.com)
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+	
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+	
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+	====================================================================================================================
+	In cryptography, PBKDF1 and PBKDF2 (Password-Based Key Derivation Function 1 and 2) are key derivation functions
+	with a sliding computational cost, used to reduce vulnerability to brute-force attacks.
+	
+	PBKDF2 applies a pseudorandom function, such as hash-based message authentication code (HMAC),
+	to the input password or passphrase along with a salt value and repeats the process many times to produce a derived key, 
+	which can then be used as a cryptographic key in subsequent operations. 
+	The added computational work makes password cracking much more difficult, and is known as key stretching. 
+	
+	depending on the input "inputmode" different inputformats are used
+	1   Password and Salt are used as Bytes
+	2   Password and Salt are used as String
+	
+	depending on the input "outputmode" different outputformats are available
+	1   The derivedKeyBytes ouput is the final value as bytes (Array [0..31] of Byte)
+	2   The derivedKeyString output is the final hash value as a hexadecimal string (64 bytes string)
+	3   Both 1 and 2
+	====================================================================================================================    
+	*)
+	END_REGION
+	
+	REGION Init
+	    IF NOT #Execute THEN
+	        #Step := 0;
+	    END_IF;
+	END_REGION
+	
+	REGION Steps
+	    CASE #Step OF
+	        0:  // INIT
+	            #Done := False;
+	            #cntU := 1;
+	            FILL_BLK(IN:=B#00, COUNT:=32, OUT=>#Ulast[0]);
+	            FILL_BLK(IN:=B#00, COUNT:=32, OUT=>#xSum[0]);
+	            FILL_BLK(IN:=B#00, COUNT:=32, OUT=>#derivedKeyBytes[0]);
+	            #derivedKeyString := '';
+	            IF #Execute THEN
+	                #Step := 1;
+	            END_IF;
+	            
+	        1:  // Pre-Settings
+	            #l := CEIL(#dkLen / #hLen);
+	            #r := #dkLen - (1-1) * #hLen;
+	            #Step := 2;
+	            
+	        2:  // Convert and copy Inputs
+	            
+	            // copy Password in Password.bytes and save the number of Bytes Password.len
+	            IF #inputmode = 1 THEN
+	                MOVE_BLK(IN:=#passwordBytes[0], COUNT:=MIN(IN1:=#passwordBytesLen, IN2:=254), OUT=>#Password.bytes[0]);
+	                #Password.len := MIN(IN1:=#passwordBytesLen, IN2:=254);
+	            ELSIF #inputmode = 2 THEN
+	                Strg_TO_Chars(Strg := #passwordString, pChars := 0, Cnt => #tempUInt, Chars := #Password.bytes);
+	                #Password.len := UINT_TO_INT(#tempUInt);
+	            END_IF;
+	            
+	            // copy Salt in Salt.bytes and save the number of Bytes Salt.len
+	            IF #inputmode = 1 THEN
+	                MOVE_BLK(IN:=#saltBytes[0], COUNT:=MIN(IN1:=#saltBytesLen, IN2:=254), OUT=>#Salt.bytes[0]);
+	                #Salt.len := MIN(IN1:=#saltBytesLen, IN2:=254);
+	            ELSIF #inputmode = 2 THEN
+	                Strg_TO_Chars(Strg := #saltString, pChars := 0, Cnt => #tempUInt, Chars := #Salt.bytes);
+	                #Salt.len := UINT_TO_INT(#tempUInt);
+	            END_IF;
+	            
+	            #Step := 3;
+	        3:  // first iteration
+	            #i := 1;
+	            #iBytes[0] := #i.%B3;
+	            #iBytes[1] := #i.%B2;
+	            #iBytes[2] := #i.%B1;
+	            #iBytes[3] := #i.%B0;
+	            MOVE_BLK(IN:=#Salt.bytes[0], COUNT:=#Salt.len, OUT=>#Unow[0]);
+	            MOVE_BLK(IN:=#iBytes[0], COUNT:=4, OUT=>#Unow[#Salt.len]);
+	            
+	            "HMAC-SHA256"(inputmode:=1, outputmode:=1, messageBytes:=#Unow, messageBytesLen:=#Salt.len + 4, messageString:=#tempString, keyBytes:=#Password.bytes, keyBytesLen:=#Password.len, keyString:=#tempString, digest=>#Ulast, hexdigest=>#tempString);
+	            #xSum := #Ulast;
+	            #Step := 4;
+	            
+	        4:  // perform the other iterations
+	            IF #cntU <= (#iterations - 1) THEN
+	                MOVE_BLK(IN:=#Ulast[0], COUNT:=32, OUT=>#Unow[0]);
+	                "HMAC-SHA256"(inputmode:=1, outputmode:=1, messageBytes:=#Unow, messageBytesLen:=32, messageString:=#tempString, keyBytes:=#Password.bytes, keyBytesLen:=#Password.len, keyString:=#tempString, digest=>#Ulast, hexdigest=>#tempString);
+	                FOR #cntXor := 0 TO 31 DO
+	                    #xSum[#cntXor] := #Ulast[#cntXor] XOR #xSum[#cntXor];
+	                END_FOR;
+	                #cntU := #cntU + 1;
+	            ELSE
+	                #Step := 5;
+	            END_IF;
+	            
+	        5:  //Done
+	            #derivedKeyBytes := #xSum;
+	            #tempWord := HTA(IN:=#derivedKeyBytes, N:=32, OUT=>#derivedKeyString);
+	            #Done := True;
+	        ELSE
+	            #Step := 0;
+	    END_CASE;
+	END_REGION
+END_FUNCTION_BLOCK
+
