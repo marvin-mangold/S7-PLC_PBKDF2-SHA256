@@ -17,7 +17,7 @@ VERSION : 0.1
    VAR_OUTPUT 
       Done : Bool;
       derivedKeyString : String;
-      derivedKeyBytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..31] of Byte;   // DK
+      derivedKeyBytes { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..31] of Byte;
    END_VAR
 
    VAR 
