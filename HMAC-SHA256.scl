@@ -114,7 +114,7 @@ BEGIN
 	    #error := FALSE;
 	    IF #Key.len <= 0 THEN #error := TRUE; END_IF;
 	    IF #Message.len <= 0 THEN #error := TRUE; END_IF;
-	    IF #Message.len > 189 THEN #error := TRUE; END_IF;
+	    IF #Message.len > 254 THEN #error := TRUE; END_IF;
 	END_REGION
 	
 	IF NOT #error THEN
